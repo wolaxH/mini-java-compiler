@@ -1,0 +1,47 @@
+# dune build minijava.exe
+# OCAMLPARAM: unset
+# Shared cache: enabled-except-user-rules
+# Shared cache location: /home/etho/.cache/dune/db
+# Workspace root: /home/etho/Lab/Compiler/final-project/mini-java-ocaml
+# Auto-detected concurrency: 16
+# Dune context:
+#  { name = "default"
+#  ; kind = "default"
+#  ; profile = Dev
+#  ; merlin = true
+#  ; fdo_target_exe = None
+#  ; build_dir = In_build_dir "default"
+#  ; instrument_with = []
+#  }
+$ /home/etho/.opam/default/bin/ocamlc.opt -config > /tmp/dune_270256_output
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamldep.opt -modules -impl minijava.ml) > _build/default/.minijava.eobjs/minijava.impl.d
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamldep.opt -modules -intf x86_64.mli) > _build/default/.minijava.eobjs/x86_64.intf.d
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamldep.opt -modules -impl compile.ml) > _build/default/.minijava.eobjs/compile.impl.d
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamldep.opt -modules -impl typing.ml) > _build/default/.minijava.eobjs/typing.impl.d
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamllex -q -o lexer.ml lexer.mll)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamldep.opt -modules -impl ast.ml) > _build/default/.minijava.eobjs/ast.impl.d
+$ (cd _build/.sandbox/24288479d3f80dc7d9390764bb5ce458/default && /home/etho/.opam/default/bin/menhir parser.mly --base parser --infer-write-query parser__mock.ml.mock)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamldep.opt -modules -impl lexer.ml) > _build/default/.minijava.eobjs/lexer.impl.d
+$ (cd _build/.sandbox/96c8393748a755bdb9c01046148ad0a8/default && /home/etho/.opam/default/bin/ocamldep.opt -modules -impl parser__mock.ml.mock) > _build/.sandbox/96c8393748a755bdb9c01046148ad0a8/default/.minijava.eobjs/parser__mock.impl.d
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlc.opt -g -g -bin-annot -bin-annot-occurrences -I .minijava.eobjs/byte -no-alias-deps -opaque -o .minijava.eobjs/byte/ast.cmo -c -impl ast.ml)
+$ (cd _build/.sandbox/dc0d426af665648935e75f4d3a23ac22/default && /home/etho/.opam/default/bin/ocamlc.opt -g -g -I .minijava.eobjs/byte -short-paths -i -impl parser__mock.ml.mock) > _build/.sandbox/dc0d426af665648935e75f4d3a23ac22/default/parser__mock.mli.inferred
+$ (cd _build/.sandbox/08a3029a3ba8bfd5c3661a46acb2c32b/default && /home/etho/.opam/default/bin/menhir --explain parser.mly --base parser --infer-read-reply parser__mock.mli.inferred)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamldep.opt -modules -intf parser.mli) > _build/default/.minijava.eobjs/parser.intf.d
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamldep.opt -modules -impl x86_64.ml) > _build/default/.minijava.eobjs/x86_64.impl.d
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamldep.opt -modules -impl parser.ml) > _build/default/.minijava.eobjs/parser.impl.d
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamldep.opt -modules -intf minijava.mli) > _build/default/.minijava.eobjs/minijava.intf.d
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlc.opt -g -g -bin-annot -bin-annot-occurrences -I .minijava.eobjs/byte -no-alias-deps -opaque -o .minijava.eobjs/byte/parser.cmi -c -intf parser.mli)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlc.opt -g -g -bin-annot -bin-annot-occurrences -I .minijava.eobjs/byte -no-alias-deps -opaque -o .minijava.eobjs/byte/x86_64.cmi -c -intf x86_64.mli)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlopt.opt -g -g -I .minijava.eobjs/byte -I .minijava.eobjs/native -cmi-file .minijava.eobjs/byte/ast.cmi -no-alias-deps -opaque -o .minijava.eobjs/native/ast.cmx -c -impl ast.ml)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlc.opt -g -g -bin-annot -bin-annot-occurrences -I .minijava.eobjs/byte -no-alias-deps -opaque -o .minijava.eobjs/byte/minijava.cmi -c -intf minijava.mli)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlc.opt -g -g -bin-annot -bin-annot-occurrences -I .minijava.eobjs/byte -no-alias-deps -opaque -o .minijava.eobjs/byte/lexer.cmo -c -impl lexer.ml)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlopt.opt -g -g -I .minijava.eobjs/byte -I .minijava.eobjs/native -cmi-file .minijava.eobjs/byte/lexer.cmi -no-alias-deps -opaque -o .minijava.eobjs/native/lexer.cmx -c -impl lexer.ml)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlc.opt -g -g -bin-annot -bin-annot-occurrences -I .minijava.eobjs/byte -no-alias-deps -opaque -o .minijava.eobjs/byte/compile.cmo -c -impl compile.ml)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlc.opt -g -g -bin-annot -bin-annot-occurrences -I .minijava.eobjs/byte -no-alias-deps -opaque -o .minijava.eobjs/byte/typing.cmo -c -impl typing.ml)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlopt.opt -g -g -I .minijava.eobjs/byte -I .minijava.eobjs/native -cmi-file .minijava.eobjs/byte/x86_64.cmi -no-alias-deps -opaque -o .minijava.eobjs/native/x86_64.cmx -c -impl x86_64.ml)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlopt.opt -g -g -I .minijava.eobjs/byte -I .minijava.eobjs/native -cmi-file .minijava.eobjs/byte/minijava.cmi -no-alias-deps -opaque -o .minijava.eobjs/native/minijava.cmx -c -impl minijava.ml)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlopt.opt -g -g -I .minijava.eobjs/byte -I .minijava.eobjs/native -cmi-file .minijava.eobjs/byte/typing.cmi -no-alias-deps -opaque -o .minijava.eobjs/native/typing.cmx -c -impl typing.ml)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlopt.opt -g -g -I .minijava.eobjs/byte -I .minijava.eobjs/native -cmi-file .minijava.eobjs/byte/compile.cmi -no-alias-deps -opaque -o .minijava.eobjs/native/compile.cmx -c -impl compile.ml)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlopt.opt -g -g -I .minijava.eobjs/byte -I .minijava.eobjs/native -cmi-file .minijava.eobjs/byte/parser.cmi -no-alias-deps -opaque -o .minijava.eobjs/native/parser.cmx -c -impl parser.ml)
+$ (cd _build/default && /home/etho/.opam/default/bin/ocamlopt.opt -g -g -o minijava.exe .minijava.eobjs/native/ast.cmx .minijava.eobjs/native/x86_64.cmx .minijava.eobjs/native/compile.cmx .minijava.eobjs/native/parser.cmx .minijava.eobjs/native/lexer.cmx .minijava.eobjs/native/typing.cmx .minijava.eobjs/native/minijava.cmx)
+# Promoting "_build/default/minijava.exe" to "minijava.exe"

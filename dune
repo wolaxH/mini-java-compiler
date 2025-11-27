@@ -1,0 +1,11 @@
+(ocamllex lexer)
+
+(menhir
+ (modules parser))
+
+(executable
+ (name minijava)
+ (modules minijava ast lexer parser typing compile x86_64)
+ (promote (until-clean))
+ (flags (-g))
+ )
