@@ -57,6 +57,10 @@ let () =
 	report (lexeme_start_p lb, lexeme_end_p lb);
 	eprintf "syntax error@.";
 	exit 1
+    | Parsing.Parse_error ->
+	report (lexeme_start_p lb, lexeme_end_p lb);
+	eprintf "syntax error@.";
+	exit 1
     | Typing.Error (loc, s) ->
 	report loc;
         eprintf "error: %s@." s;

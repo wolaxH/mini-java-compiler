@@ -16,6 +16,9 @@ let error ?(loc=dummy_loc) f =
 (* Global class table *)
 let classes : (string, class_) Hashtbl.t = Hashtbl.create 16
 
+(* Constructor parameters table: class name -> parameter list *)
+let constructor_params : (string, var list) Hashtbl.t = Hashtbl.create 16
+
 (* Predefined classes: Object and String *)
 let class_Object = {
   class_name = "Object";
@@ -79,7 +82,9 @@ let rec subtype t1 t2 = match t1, t2 with
   | _, _ -> false
 
 (* Check if types are compatible *)
-let compatible t1 t2 = subtype t1 t2 || subtype t2 t1
+let compatible t1 t2 =
+  (* Special case: null == null is always valid *)
+  (t1 = Tnull && t2 = Tnull) || subtype t1 t2 || subtype t2 t1
 
 (* Type equality check - use this instead of structural equality *)
 let type_equal t1 t2 = match t1, t2 with
@@ -159,29 +164,19 @@ let declare_members (pfile : pfile) =
 
       current_class := c;
 
-      (* Inherit attributes from parent *)
-      if c.class_extends.class_name <> c.class_name then begin
-        Hashtbl.iter (fun name attr ->
-          if not (Hashtbl.mem c.class_attributes name) then
-            Hashtbl.add c.class_attributes name attr
-        ) c.class_extends.class_attributes;
-
-        (* Inherit methods from parent *)
-        Hashtbl.iter (fun name meth ->
-          if not (Hashtbl.mem c.class_methods name) then
-            Hashtbl.add c.class_methods name meth
-        ) c.class_extends.class_methods
-      end;
-
-      (* Now process this class's own members *)
+      (* Process this class's own members first *)
       let decls = try Hashtbl.find class_decls class_name with Not_found -> [] in
       let constructor_count = ref 0 in
+
+      (* Track locally defined attributes to detect duplicates *)
+      let local_attrs = Hashtbl.create 16 in
 
       List.iter (fun decl ->
         match decl with
         | PDattribute (pty, attr_id) ->
-            if Hashtbl.mem c.class_attributes attr_id.id then
-              error ~loc:attr_id.loc "attribute %s already defined in class or parent" attr_id.id;
+            (* Only check for duplicates within this class, not parent *)
+            if Hashtbl.mem local_attrs attr_id.id then
+              error ~loc:attr_id.loc "attribute %s already defined in class" attr_id.id;
             let ty = ptype_to_type ~loc:attr_id.loc pty in
             if not (type_wf ty) then
               error ~loc:attr_id.loc "type is not well-formed";
@@ -190,6 +185,7 @@ let declare_members (pfile : pfile) =
               attr_type = ty;
               attr_ofs = 0; (* will be set later *)
             } in
+            Hashtbl.add local_attrs attr_id.id ();
             Hashtbl.add c.class_attributes attr_id.id attr
 
         | PDconstructor (cons_id, params, _) ->
@@ -197,9 +193,30 @@ let declare_members (pfile : pfile) =
             if !constructor_count > 1 then
               error ~loc:cons_id.loc "class can have at most one constructor";
             if cons_id.id <> c.class_name then
-              error ~loc:cons_id.loc "constructor name must match class name"
+              error ~loc:cons_id.loc "constructor name must match class name";
+            (* Check for duplicate parameter names *)
+            let param_names = Hashtbl.create 16 in
+            List.iter (fun (_, pid) ->
+              if Hashtbl.mem param_names pid.id then
+                error ~loc:pid.loc "duplicate parameter name %s" pid.id;
+              Hashtbl.add param_names pid.id ()
+            ) params;
+            (* Store constructor parameters *)
+            let param_types = List.map (fun (pty, pid) ->
+              let ty = ptype_to_type ~loc:pid.loc pty in
+              {var_name = pid.id; var_type = ty; var_ofs = 0}
+            ) params in
+            Hashtbl.replace constructor_params c.class_name param_types
 
         | PDmethod (ret_ty_opt, meth_id, params, _) ->
+            (* Check for duplicate parameter names *)
+            let param_names = Hashtbl.create 16 in
+            List.iter (fun (_, pid) ->
+              if Hashtbl.mem param_names pid.id then
+                error ~loc:pid.loc "duplicate parameter name %s" pid.id;
+              Hashtbl.add param_names pid.id ()
+            ) params;
+
             let ret_ty = match ret_ty_opt with
               | None -> Tvoid
               | Some pty -> ptype_to_type ~loc:meth_id.loc pty
@@ -210,20 +227,37 @@ let declare_members (pfile : pfile) =
               ptype_to_type ~loc:pid.loc pty
             ) params in
 
-            (* Check if method already exists (overriding check) *)
-            let is_override = Hashtbl.mem c.class_methods meth_id.id in
-            if is_override then begin
-              let parent_meth = Hashtbl.find c.class_methods meth_id.id in
-              (* Check same signature *)
-              if parent_meth.meth_type <> ret_ty then
-                error ~loc:meth_id.loc "overriding method must have same return type";
-              if List.length parent_meth.meth_params <> List.length param_types then
-                error ~loc:meth_id.loc "overriding method must have same number of parameters";
-              List.iter2 (fun pv pt ->
-                if pv.var_type <> pt then
-                  error ~loc:meth_id.loc "overriding method must have same parameter types"
-              ) parent_meth.meth_params param_types
+            (* Check if method is already defined in this class *)
+            if Hashtbl.mem c.class_methods meth_id.id then begin
+              let existing_meth = Hashtbl.find c.class_methods meth_id.id in
+              match existing_meth.meth_defining_class with
+              | Some dc when dc.class_name = c.class_name ->
+                  (* Already defined in this class - error *)
+                  error ~loc:meth_id.loc "method %s already defined in class" meth_id.id
+              | _ -> () (* Defined in parent, will check override below *)
             end;
+
+            (* Check if method exists in parent (override check) *)
+            let parent_meth_opt =
+              if c.class_extends.class_name <> c.class_name then
+                try Some (Hashtbl.find c.class_extends.class_methods meth_id.id)
+                with Not_found -> None
+              else None
+            in
+
+            (match parent_meth_opt with
+             | Some parent_meth ->
+                 (* This is an override - check signature compatibility *)
+                 if parent_meth.meth_type <> ret_ty then
+                   error ~loc:meth_id.loc "overriding method must have same return type";
+                 if List.length parent_meth.meth_params <> List.length param_types then
+                   error ~loc:meth_id.loc "overriding method must have same number of parameters";
+                 List.iter2 (fun pv pt ->
+                   if pv.var_type <> pt then
+                     error ~loc:meth_id.loc "overriding method must have same parameter types"
+                 ) parent_meth.meth_params param_types
+             | None -> () (* New method, not an override *)
+            );
 
             let param_vars = List.map2 (fun (_, pid) pty ->
               {var_name = pid.id; var_type = pty; var_ofs = 0}
@@ -236,12 +270,24 @@ let declare_members (pfile : pfile) =
               meth_ofs = 0; (* will be set later *)
               meth_defining_class = Some c; (* Mark which class defines this method *)
             } in
-            (* Only replace if overriding, otherwise add new method *)
-            if is_override then
-              Hashtbl.replace c.class_methods meth_id.id meth
-            else
-              Hashtbl.add c.class_methods meth_id.id meth
-      ) decls
+            (* Add or replace method *)
+            Hashtbl.replace c.class_methods meth_id.id meth
+      ) decls;
+
+      (* After processing this class's members, inherit from parent *)
+      if c.class_extends.class_name <> c.class_name then begin
+        (* Inherit attributes from parent (add only if not shadowed) *)
+        Hashtbl.iter (fun name attr ->
+          if not (Hashtbl.mem c.class_attributes name) then
+            Hashtbl.add c.class_attributes name attr
+        ) c.class_extends.class_attributes;
+
+        (* Inherit methods from parent (add only if not overridden) *)
+        Hashtbl.iter (fun name meth ->
+          if not (Hashtbl.mem c.class_methods name) then
+            Hashtbl.add c.class_methods name meth
+        ) c.class_extends.class_methods
+      end
     end
   in
 
@@ -447,7 +493,19 @@ let rec type_expr (env : env) (pe : pexpr) : expr =
           error ~loc "unknown class %s" id.id;
         let c = Hashtbl.find classes id.id in
         let targs = List.map (type_expr env) args in
-        (* Constructor type checking would go here *)
+        (* Constructor type checking *)
+        let expected_params = try
+          Hashtbl.find constructor_params c.class_name
+        with Not_found ->
+          [] (* No explicit constructor means default no-arg constructor *)
+        in
+        if List.length targs <> List.length expected_params then
+          error ~loc "constructor for class %s expects %d arguments, got %d"
+            c.class_name (List.length expected_params) (List.length targs);
+        List.iter2 (fun targ param ->
+          if not (subtype targ.expr_type param.var_type) then
+            error ~loc "type mismatch in constructor argument"
+        ) targs expected_params;
         Enew (c, targs), Tclass c
 
     | PEcast (pty, e) ->
@@ -476,6 +534,16 @@ let rec type_expr (env : env) (pe : pexpr) : expr =
         Eprint te, Tvoid
   in
   {expr_desc = desc; expr_type = ty}
+
+(* Check if a statement always returns *)
+let rec stmt_returns (s : stmt) : bool =
+  match s with
+  | Sreturn _ -> true
+  | Sif (_, s1, s2) -> stmt_returns s1 && stmt_returns s2
+  | Sblock stmts ->
+      List.exists stmt_returns stmts
+  | Sfor _ -> false (* Loop might not execute *)
+  | Sexpr _ | Svar _ -> false
 
 (* Type check statements *)
 let rec type_stmt (env : env) (expected_return : typ option) (ps : pstmt) : stmt * env =
@@ -582,6 +650,9 @@ let type_class (id, extends_opt, decls : pclass) : tclass =
         (* Type check body *)
         let return_ty = if meth.meth_type = Tvoid then None else Some meth.meth_type in
         let tbody, _ = type_stmt env return_ty body in
+        (* Check that non-void methods always return *)
+        if meth.meth_type <> Tvoid && not (stmt_returns tbody) then
+          error ~loc:body.pstmt_loc "method %s must return a value on all paths" meth.meth_name;
         Some (Dmethod (meth, tbody))
   ) decls in
 
@@ -590,12 +661,24 @@ let type_class (id, extends_opt, decls : pclass) : tclass =
 (* Set attribute offsets *)
 let set_attribute_offsets c =
   let ofs = ref 8 in
+  (* Collect attributes including shadowed ones from parent classes *)
   let rec collect_attrs c =
     if c.class_name = "Object" then []
     else
       let parent_attrs = collect_attrs c.class_extends in
+      (* Collect only locally defined attributes *)
+      (* We need to find which attributes are defined in THIS class vs inherited *)
+      (* An attribute is locally defined if it doesn't exist in parent or has different identity *)
       let own_attrs = Hashtbl.fold (fun name attr acc ->
-        if List.exists (fun a -> a.attr_name = name) parent_attrs then acc
+        (* Check if this attribute was inherited or locally defined *)
+        let is_inherited =
+          try
+            let parent_attr = Hashtbl.find c.class_extends.class_attributes name in
+            (* Same physical attribute means inherited *)
+            parent_attr == attr
+          with Not_found -> false
+        in
+        if is_inherited then acc
         else attr :: acc
       ) c.class_attributes [] in
       parent_attrs @ own_attrs
@@ -641,6 +724,7 @@ let file ?debug:(b=false) (p: Ast.pfile) : Ast.tfile =
 
   (* Clear previous state *)
   Hashtbl.clear classes;
+  Hashtbl.clear constructor_params;
   Hashtbl.add classes "Object" class_Object;
   Hashtbl.add classes "String" class_String;
 

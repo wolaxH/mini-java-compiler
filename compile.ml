@@ -11,6 +11,9 @@ let new_label () =
   incr label_counter;
   sprintf ".L%d" !label_counter
 
+(* Current method end label for return statements *)
+let current_method_end_label = ref None
+
 (* String constants *)
 let strings = Hashtbl.create 16
 let string_counter = ref 0
@@ -342,9 +345,25 @@ let rec compile_expr env expr =
       subq (imm 8) (reg rax)         (* Return pointer to object (with descriptor) *)
 
   | Enew (c, args) ->
-      (* Calculate object size *)
-      let num_attrs = Hashtbl.length c.class_attributes in
-      let size = 8 * (num_attrs + 1) in
+      (* Calculate object size: count all attributes including shadowed ones *)
+      let rec count_attrs cls =
+        if cls.class_name = "Object" then 0
+        else
+          let parent_count = count_attrs cls.class_extends in
+          (* Count locally defined attributes (not inherited) *)
+          let own_count = Hashtbl.fold (fun name attr acc ->
+            let is_inherited =
+              try
+                let parent_attr = Hashtbl.find cls.class_extends.class_attributes name in
+                parent_attr == attr
+              with Not_found -> false
+            in
+            if is_inherited then acc else acc + 1
+          ) cls.class_attributes 0 in
+          parent_count + own_count
+      in
+      let num_attrs = count_attrs c in
+      let size = 8 * (num_attrs + 1) in  (* +1 for method table pointer *)
       movq (imm size) (reg rdi) ++
       call "my_malloc" ++
       (* Set class descriptor *)
@@ -524,10 +543,16 @@ let rec compile_stmt env next_ofs stmt =
        label lbl_end), next_ofs
 
   | Sreturn None ->
-      nop, next_ofs
+      (match !current_method_end_label with
+       | Some lbl -> jmp lbl
+       | None -> nop), next_ofs
 
   | Sreturn (Some e) ->
-      compile_expr env e, next_ofs
+      let end_lbl = match !current_method_end_label with
+        | Some lbl -> lbl
+        | None -> failwith "Return statement outside method"
+      in
+      (compile_expr env e ++ jmp end_lbl), next_ofs
 
   | Sblock stmts ->
       let code, ofs = List.fold_left (fun (code_acc, ofs) s ->
@@ -541,8 +566,10 @@ let rec compile_stmt env next_ofs stmt =
       let lbl_end = new_label () in
       let code_init, ofs1 = compile_stmt env next_ofs init in
       let code_cond = compile_expr env cond in
-      let code_incr, _ = compile_stmt env ofs1 incr in
-      let code_body, _ = compile_stmt env ofs1 body in
+      let code_incr, ofs_incr = compile_stmt env ofs1 incr in
+      let code_body, ofs_body = compile_stmt env ofs1 body in
+      (* Return the minimum offset (maximum stack usage) from body and incr *)
+      let final_ofs = min ofs_incr ofs_body in
       (code_init ++
        label lbl_cond ++
        code_cond ++
@@ -551,7 +578,7 @@ let rec compile_stmt env next_ofs stmt =
        code_body ++
        code_incr ++
        jmp lbl_cond ++
-       label lbl_end), ofs1
+       label lbl_end), final_ofs
 
 (* Compile method or constructor *)
 let compile_method c meth_opt params body =
@@ -559,6 +586,12 @@ let compile_method c meth_opt params body =
     | None -> constructor_label c
     | Some m -> method_label c m
   in
+
+  (* Generate a unique end label for this method *)
+  let end_label = new_label () in
+
+  (* Store the end label for return statements to use *)
+  current_method_end_label := Some end_label;
 
   (* Set up parameter offsets *)
   (* this is at rbp+16, parameters start at rbp+24 *)
@@ -571,6 +604,9 @@ let compile_method c meth_opt params body =
   (* Compile body *)
   let code_body, final_ofs = compile_stmt [] (-8) body in
 
+  (* Clear the end label *)
+  current_method_end_label := None;
+
   (* Calculate stack space needed *)
   let stack_space = -final_ofs in
   let stack_space_aligned = ((stack_space + 15) / 16) * 16 in
@@ -580,6 +616,7 @@ let compile_method c meth_opt params body =
   movq (reg rsp) (reg rbp) ++
   subq (imm stack_space_aligned) (reg rsp) ++
   code_body ++
+  label end_label ++
   movq (reg rbp) (reg rsp) ++
   popq rbp ++
   ret
