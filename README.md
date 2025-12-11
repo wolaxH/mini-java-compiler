@@ -3,8 +3,8 @@ a mini java compiler implement with ocaml
 for NTUT Compile cource final project
 
 ## introduce
-This project is a compiler that compile java code to assembly 
-this compiler does not include Java Class Library just some basic function
+This project is a compiler that compile java code to assembly  
+this compiler does not include Java Class Library just some basic function  
 Some function is call C standard library eg. System.out.print() -> printf()
 
 ## build
